@@ -1,6 +1,0 @@
-{
-  "name": "GitHub520→CheckTMDB Runtime Hosts",
-  "description": "先劫持 GitHub520 保证 GitHub 连通，再拉取 CheckTMDB IPv4/IPv6 双栈 hosts；不写系统文件，每日 04:00 自动更新。鸣谢 @521xueweihan & @cnwikee。",
-  "version": "1.0",
-  "author": "DE3PDARKFANTASY"
-}
