@@ -1,0 +1,55 @@
+{
+  "name": "github520_tmdb_runtime_hosts",
+  "version": "1.5.0",
+  "icon": "dns",
+  "title": "GitHub520 → CheckTMDB Runtime Hosts",
+  "description": "动态注入 GitHub520 + CheckTMDB 的 hosts 解析规则",
+  "author": "YourName",
+  "homepage": "https://github.com/yourname/moviepilot-runtime-hosts",
+  "config": [
+    {
+      "type": "switch",
+      "label": "启用插件",
+      "name": "enable",
+      "default": true
+    },
+    {
+      "type": "number",
+      "label": "每日更新时间",
+      "name": "update_hour",
+      "default": 4,
+      "min": 0,
+      "max": 23,
+      "help": "UTC时间，0-23点"
+    },
+    {
+      "type": "text",
+      "label": "GitHub520 URL",
+      "name": "github_url",
+      "default": "https://raw.hellogithub.com/hosts",
+      "help": "GitHub520 hosts文件地址"
+    },
+    {
+      "type": "text",
+      "label": "TMDB IPv4 URL",
+      "name": "tmdb_ipv4_url",
+      "default": "https://raw.githubusercontent.com/cnwikee/CheckTMDB/main/Tmdb_host_ipv4",
+      "help": "TMDB IPv4 hosts文件地址"
+    },
+    {
+      "type": "text",
+      "label": "TMDB IPv6 URL",
+      "name": "tmdb_ipv6_url",
+      "default": "https://raw.githubusercontent.com/cnwikee/CheckTMDB/main/Tmdb_host_ipv6",
+      "help": "TMDB IPv6 hosts文件地址"
+    },
+    {
+      "type": "text",
+      "label": "连通性测试URL",
+      "name": "probe_url",
+      "default": "https://api.github.com",
+      "help": "用于测试GitHub连通性的URL"
+    }
+  ],
+  "permission_level": 1
+}
