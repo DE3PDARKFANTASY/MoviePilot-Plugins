@@ -7,9 +7,10 @@
     "icon": "hosts.png",
     "author": "thsrite",
     "level": 1,
+    "v2": true,
     "history": {
       "v2.0.0": "AI改造：新增定时自动更新CheckTMDB hosts（默认每6小时，间隔可配置）、IPv4/IPv6独立开关、更新时间记录；修复空行误判为错误hosts的问题",
-      "v1.2.1": "原版：自定义系统hosts"
+      "v1.2.1": "更新依赖（原版）"
     }
   }
 }
