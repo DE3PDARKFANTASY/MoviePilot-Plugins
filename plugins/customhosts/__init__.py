@@ -30,7 +30,7 @@ class CustomHosts(_PluginBase):
     # 插件图标
     plugin_icon = "hosts.png"
     # 插件版本
-    plugin_version = "2.0.1"
+    plugin_version = "2.1.0"
     # 插件作者
     plugin_author = "thsrite"
     # 作者主页
@@ -327,7 +327,8 @@ class CustomHosts(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': '开启自动更新后，插件会每N小时从CheckTMDB拉取TMDB/TheTVDB/IMDb等域名IP写入系统hosts。'
+                                            'text': '开启自动更新后，插件会每N小时从CheckTMDB拉取TMDB/TheTVDB/IMDb等域名IP写入系统hosts；'
+                                                    '拉取失败会自动尝试镜像与兜底源（GitHub520）并沿用上次成功内容，不会因此停用插件。'
                                                     '（注：容器运行则更新容器hosts！非宿主机！）'
                                         }
                                     }
@@ -413,6 +414,10 @@ class CustomHosts(_PluginBase):
                 host_entry = HostsEntry(entry_type='comment', comment=host)
                 new_entrys.append(host_entry)
                 continue
+
+            # 去掉行内注释（如GitHub520的 "ip 域名 # Timeout"），避免把注释当成域名
+            if ' #' in host:
+                host = host.split(' #')[0].strip()
 
             host_arr = str(host).split()
             try:
@@ -524,8 +529,14 @@ class CustomHosts(_PluginBase):
             "remote_hosts": self._remote_hosts
         })
 
-# GitHub raw 镜像前缀（直连失败时依次尝试，加速国内访问）
+    # GitHub raw 镜像前缀（直连失败时依次尝试，加速国内访问）
     MIRROR_PREFIXES = ["", "https://ghfast.top/", "https://gh-proxy.com/"]
+    # 最终兜底源：CheckTMDB全部拉取失败后，从国内源拉GitHub520 hosts（保GitHub连通，
+    # 注意其只含GitHub域名，不含TMDB/IMDb），均为国内直连不走代理
+    FALLBACK_SOURCES = [
+        ("GitHub520-HelloGitHub", "https://raw.hellogithub.com/hosts"),
+        ("GitHub520-Gitee", "https://gitee.com/snow2zhou/GitHub520/raw/main/hosts"),
+    ]
 
     def __fetch_remote_hosts(self) -> Tuple[str, str]:
         """
@@ -540,13 +551,15 @@ class CustomHosts(_PluginBase):
         if proxy_host:
             proxies = {"http": proxy_host, "https": proxy_host}
 
-        def download(url: str) -> str:
+        def download(url: str, with_mirror: bool = True, use_proxy: bool = True) -> str:
             # 直连失败时依次尝试镜像前缀，每个地址最多重试2次
-            for prefix in MIRROR_PREFIXES:
+            prefixes = self.MIRROR_PREFIXES if with_mirror else [""]
+            req_proxies = proxies if use_proxy else None
+            for prefix in prefixes:
                 real_url = prefix + url
                 for attempt in range(2):
                     try:
-                        content = RequestUtils(proxies=proxies, timeout=30).get(real_url)
+                        content = RequestUtils(proxies=req_proxies, timeout=30).get(real_url)
                         if content:
                             return content
                     except Exception as err:
@@ -569,8 +582,17 @@ class CustomHosts(_PluginBase):
                 contents.append(content)
             else:
                 errors.append("IPv6下载失败")
+        # 最终兜底：CheckTMDB全失败时从国内源拉GitHub520，至少保住GitHub相关域名解析
         if not contents:
-            return "", "；".join(errors)
+            for fb_name, fb_url in self.FALLBACK_SOURCES:
+                content = download(fb_url, with_mirror=False, use_proxy=False)
+                if content:
+                    logger.info(f"CheckTMDB拉取失败，已使用兜底源 {fb_name} 的GitHub520 hosts")
+                    contents.append(f"# ---------- 兜底源 {fb_name}（仅GitHub域名） ----------")
+                    contents.append(content)
+                    break
+        if not contents:
+            return "", "；".join(errors) + "；兜底源亦失败"
         return "\n".join(contents), ""
 
     def __auto_update_job(self):
