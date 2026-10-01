@@ -1,4 +1,5 @@
 from datetime import datetime
+from time import sleep
 from typing import Any, Dict, List, Tuple
 
 from python_hosts import Hosts, HostsEntry
@@ -29,7 +30,7 @@ class CustomHosts(_PluginBase):
     # 插件图标
     plugin_icon = "hosts.png"
     # 插件版本
-    plugin_version = "2.0.0"
+    plugin_version = "2.0.1"
     # 插件作者
     plugin_author = "thsrite"
     # 作者主页
@@ -52,6 +53,7 @@ class CustomHosts(_PluginBase):
     _url_v6 = DEFAULT_URL_V6
     _err_hosts = ""
     _update_times = ""
+    _remote_hosts = ""
 
     def init_plugin(self, config: dict = None):
         # 读取配置
@@ -75,6 +77,7 @@ class CustomHosts(_PluginBase):
         self._url_v6 = config.get("url_v6") or DEFAULT_URL_V6
         self._err_hosts = config.get("err_hosts") or ""
         self._update_times = config.get("update_times") or ""
+        self._remote_hosts = config.get("remote_hosts") or ""
 
         # 排除空的host
         new_hosts = []
@@ -446,21 +449,52 @@ class CustomHosts(_PluginBase):
         hosts_list = []
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         # 1. 自动更新：拉取CheckTMDB远程hosts
+        fetch_failed = False
         if self._auto_update:
             remote_hosts, fetch_err = self.__fetch_remote_hosts()
             if remote_hosts:
                 hosts_list.extend(remote_hosts.split('\n'))
+                self._remote_hosts = remote_hosts
                 logger.info("CheckTMDB远程hosts拉取成功")
             else:
-                logger.warning(f"CheckTMDB远程hosts拉取失败：{fetch_err or '未知错误'}")
-                if send_message:
-                    self.systemmessage.put(
-                        f"CheckTMDB远程hosts拉取失败：{fetch_err or '请检查网络或代理配置'}", title="自定义Hosts")
+                # 拉取失败：优先使用上次成功的缓存，绝不因此禁用插件
+                fetch_failed = True
+                if self._remote_hosts:
+                    hosts_list.extend(self._remote_hosts.split('\n'))
+                    logger.warning(
+                        f"CheckTMDB远程hosts拉取失败：{fetch_err or '未知错误'}，已沿用上次成功内容")
+                    if send_message:
+                        self.systemmessage.put(
+                            f"CheckTMDB远程hosts拉取失败：{fetch_err or '请检查网络或代理配置'}，已沿用上次成功内容",
+                            title="自定义Hosts")
+                else:
+                    logger.warning(f"CheckTMDB远程hosts拉取失败：{fetch_err or '未知错误'}，且无历史缓存可用")
+                    if send_message:
+                        self.systemmessage.put(
+                            f"CheckTMDB远程hosts拉取失败：{fetch_err or '请检查网络或代理配置'}，将仅使用手动hosts",
+                            title="自定义Hosts")
         # 2. 手动自定义hosts追加在后面
         hosts_list.extend(self._hosts)
 
-        # 3. 没有可用内容则清除系统hosts
+        # 3. 没有可用内容则清除系统hosts（拉取失败时不清除，避免误清已有hosts）
         if not hosts_list:
+            if fetch_failed:
+                logger.warning("无任何可用hosts内容且为拉取失败导致，保留系统hosts现状，不做清除")
+                self._err_hosts = ""
+                self.update_config({
+                    "hosts": ''.join(self._hosts),
+                    "err_hosts": self._err_hosts,
+                    "enabled": self._enabled,
+                    "auto_update": self._auto_update,
+                    "update_interval": self._update_interval,
+                    "use_ipv4": self._use_ipv4,
+                    "use_ipv6": self._use_ipv6,
+                    "url_v4": self._url_v4,
+                    "url_v6": self._url_v6,
+                    "update_times": self._update_times,
+                    "remote_hosts": self._remote_hosts
+                })
+                return
             self.__clear_system_hosts()
             self._enabled = False
             self.update_config({"enabled": False})
@@ -486,8 +520,12 @@ class CustomHosts(_PluginBase):
             "use_ipv6": self._use_ipv6,
             "url_v4": self._url_v4,
             "url_v6": self._url_v6,
-            "update_times": self._update_times
+            "update_times": self._update_times,
+            "remote_hosts": self._remote_hosts
         })
+
+# GitHub raw 镜像前缀（直连失败时依次尝试，加速国内访问）
+    MIRROR_PREFIXES = ["", "https://ghfast.top/", "https://gh-proxy.com/"]
 
     def __fetch_remote_hosts(self) -> Tuple[str, str]:
         """
@@ -502,15 +540,30 @@ class CustomHosts(_PluginBase):
         if proxy_host:
             proxies = {"http": proxy_host, "https": proxy_host}
 
+        def download(url: str) -> str:
+            # 直连失败时依次尝试镜像前缀，每个地址最多重试2次
+            for prefix in MIRROR_PREFIXES:
+                real_url = prefix + url
+                for attempt in range(2):
+                    try:
+                        content = RequestUtils(proxies=proxies, timeout=30).get(real_url)
+                        if content:
+                            return content
+                    except Exception as err:
+                        logger.warning(f"下载hosts失败（{real_url} 第{attempt + 1}次）：{str(err)}")
+                    if attempt == 0:
+                        sleep(3)
+            return ""
+
         if self._use_ipv4:
-            content = RequestUtils(proxies=proxies, timeout=30).get(self._url_v4)
+            content = download(self._url_v4)
             if content:
                 contents.append("# ---------- CheckTMDB IPv4 ----------")
                 contents.append(content)
             else:
                 errors.append("IPv4下载失败")
         if self._use_ipv6:
-            content = RequestUtils(proxies=proxies, timeout=30).get(self._url_v6)
+            content = download(self._url_v6)
             if content:
                 contents.append("# ---------- CheckTMDB IPv6 ----------")
                 contents.append(content)
