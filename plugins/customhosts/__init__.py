@@ -30,7 +30,7 @@ class CustomHosts(_PluginBase):
     # 插件图标
     plugin_icon = "hosts.png"
     # 插件版本
-    plugin_version = "2.1.0"
+    plugin_version = "2.2.0"
     # 插件作者
     plugin_author = "thsrite"
     # 作者主页
@@ -328,7 +328,8 @@ class CustomHosts(_PluginBase):
                                             'type': 'info',
                                             'variant': 'tonal',
                                             'text': '开启自动更新后，插件会每N小时从CheckTMDB拉取TMDB/TheTVDB/IMDb等域名IP写入系统hosts；'
-                                                    '拉取失败会自动尝试镜像与兜底源（GitHub520）并沿用上次成功内容，不会因此停用插件。'
+                                                    '拉取失败会自动尝试镜像（ghfast/gh-proxy/jsDelivr CDN）与兜底源'
+                                                    '（Gitee TMDB hosts、GitHub520）并沿用上次成功内容，不会因此停用插件。'
                                                     '（注：容器运行则更新容器hosts！非宿主机！）'
                                         }
                                     }
@@ -530,12 +531,41 @@ class CustomHosts(_PluginBase):
         })
 
     # GitHub raw 镜像前缀（直连失败时依次尝试，加速国内访问）
-    MIRROR_PREFIXES = ["", "https://ghfast.top/", "https://gh-proxy.com/"]
-    # 最终兜底源：CheckTMDB全部拉取失败后，从国内源拉GitHub520 hosts（保GitHub连通，
-    # 注意其只含GitHub域名，不含TMDB/IMDb），均为国内直连不走代理
+    MIRROR_PREFIXES = ["https://ghfast.top/", "https://gh-proxy.com/"]
+    # jsDelivr CDN 节点（对 raw.githubusercontent.com 链接生成等价CDN地址）
+    JSDELIVR_HOSTS = ["fastly.jsdelivr.net", "cdn.jsdelivr.net", "gcore.jsdelivr.net"]
+
+    @classmethod
+    def __url_variants(cls, url: str) -> List[str]:
+        """
+        生成一个下载地址的全部镜像变体：原地址 -> gh镜像前缀 -> jsDelivr CDN
+        """
+        variants = [url]
+        for prefix in cls.MIRROR_PREFIXES:
+            variants.append(prefix + url)
+        # raw.githubusercontent.com/u/r/refs/heads/branch/path -> jsDelivr /gh/u/r@branch/path
+        if url.startswith("https://raw.githubusercontent.com/"):
+            rest = url[len("https://raw.githubusercontent.com/"):]
+            parts = rest.split("/")
+            if len(parts) >= 4:
+                if parts[2] == "refs" and parts[3] == "heads" and len(parts) >= 6:
+                    branch = parts[4]
+                    path = "/".join(parts[5:])
+                else:
+                    branch = parts[2]
+                    path = "/".join(parts[3:])
+                if branch and path:
+                    repo_at = f"{parts[0]}/{parts[1]}@{branch}"
+                    for host in cls.JSDELIVR_HOSTS:
+                        variants.append(f"https://{host}/gh/{repo_at}/{path}")
+        return variants
+    # 最终兜底源：CheckTMDB全部拉取失败后从国内源拉取（均为国内直连不走代理）。
+    # 注意：nirvanaalex/hosts 为TMDB等域名专项（每日auto update）；GitHub520只含
+    # GitHub域名不含TMDB/IMDb，仅用于保住GitHub连通性（通了下次CheckTMDB才能拉到）
     FALLBACK_SOURCES = [
+        ("TMDB-Gitee-nirvanaalex", "https://gitee.com/nirvanaalex/hosts/raw/master/hosts"),
         ("GitHub520-HelloGitHub", "https://raw.hellogithub.com/hosts"),
-        ("GitHub520-Gitee", "https://gitee.com/snow2zhou/GitHub520/raw/main/hosts"),
+        ("GitHub520-Gitee-snow2zhou", "https://gitee.com/snow2zhou/GitHub520/raw/main/hosts"),
     ]
 
     def __fetch_remote_hosts(self) -> Tuple[str, str]:
@@ -552,15 +582,16 @@ class CustomHosts(_PluginBase):
             proxies = {"http": proxy_host, "https": proxy_host}
 
         def download(url: str, with_mirror: bool = True, use_proxy: bool = True) -> str:
-            # 直连失败时依次尝试镜像前缀，每个地址最多重试2次
-            prefixes = self.MIRROR_PREFIXES if with_mirror else [""]
+            # 依次尝试原地址与全部镜像变体，每个地址最多重试2次
+            variants = self.__url_variants(url) if with_mirror else [url]
             req_proxies = proxies if use_proxy else None
-            for prefix in prefixes:
-                real_url = prefix + url
+            for real_url in variants:
                 for attempt in range(2):
                     try:
                         content = RequestUtils(proxies=req_proxies, timeout=30).get(real_url)
                         if content:
+                            if real_url != url:
+                                logger.info(f"hosts下载成功（镜像）：{real_url}")
                             return content
                     except Exception as err:
                         logger.warning(f"下载hosts失败（{real_url} 第{attempt + 1}次）：{str(err)}")
