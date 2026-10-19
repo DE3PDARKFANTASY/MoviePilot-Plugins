@@ -12,5 +12,20 @@
       "v2.0.0": "AI改造：新增定时自动更新CheckTMDB hosts（默认每6小时，间隔可配置）、IPv4/IPv6独立开关、更新时间记录；修复空行误判为错误hosts的问题",
       "v1.2.1": "更新依赖（原版）"
     }
+  },
+  "BrushFlow": {
+    "name": "站点刷流",
+    "description": "多站点刷流任务托管、统计与运行诊断（v4 系列最终版，适配 MoviePilot 2.x）。",
+    "labels": "刷流",
+    "version": "100.100.100.100",
+    "icon": "https://raw.githubusercontent.com/DE3PDARKFANTASY/MoviePilot-Plugins/main/icons/brush.jpg",
+    "author": "jxxghp,InfinityPacer,Seed680",
+    "level": 1,
+    "v2": true,
+    "history": {
+      "v4.3.5": "提升匹配规则时的健壮性（v4 系列最终版本）",
+      "v4.3.4": "添加 RSS 支持配置选项",
+      "v4.3.2": "增加“删除促销结束的未完成下载”功能"
+    }
   }
 }
